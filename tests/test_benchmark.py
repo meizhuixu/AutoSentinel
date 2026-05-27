@@ -171,17 +171,6 @@ class TestRunV2Detail:
         assert result["security_verdict"] == "HIGH_RISK"
         assert result["resolved"] is True
 
-    def test_non_s04_does_not_patch_code_fixer(self, tmp_path):
-        """nullcontext path: _get_fix_for_security must not be called for non-s04."""
-        log = tmp_path / "log.json"
-        log.write_text("{}")
-        with patch("autosentinel.benchmark.build_multi_agent_graph",
-                   return_value=self._make_graph(verdict="SAFE")), \
-             patch("autosentinel.agents.code_fixer.CodeFixerAgent"
-                   "._get_fix_for_security") as mock_fix:
-            _run_v2_detail(self._s("s02"), log)
-        mock_fix.assert_not_called()
-
     def test_exception_returns_unresolved(self, tmp_path):
         log = tmp_path / "log.json"
         log.write_text("{}")

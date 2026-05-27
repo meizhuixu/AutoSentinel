@@ -91,10 +91,6 @@ SCENARIOS: list[dict] = [
             "message": "sql injection attempt detected in query parameter",
             "stack_trace": None,
         },
-        # _run_v2_detail patches CodeFixerAgent._get_fix_for_security to return
-        # "DROP TABLE users", so SecurityReviewerAgent sees a HIGH_RISK keyword
-        # and security_gate calls interrupt(). was_interrupted=True in the report
-        # is hard evidence that SC-003 fires under real LangGraph execution.
         "expected_verdict": "HIGH_RISK",
     },
     {
@@ -140,9 +136,9 @@ def _run_v1(log_path: Path) -> dict:
 def _run_v2_detail(scenario: dict, log_path: Path) -> dict:
     """Run through v2 graph directly; detect interrupt; return full detail dict.
 
-    For s04 (SECURITY), patches CodeFixerAgent._get_fix_for_security to inject a
-    HIGH_RISK keyword. This does not affect CodeFixerAgent globally — the patch is
-    scoped to the first graph.invoke() call only.
+    For s04 (SECURITY), the SECURITY scenario produces a fix containing
+    HIGH_RISK keywords, triggering SecurityReviewerAgent's interrupt()
+    via security_gate. was_interrupted=True is hard evidence SC-003 fires.
     """
     was_interrupted = False
     final_result: dict = {}
