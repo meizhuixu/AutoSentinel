@@ -3,3 +3,36 @@ For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
 at `specs/005-real-llm-integration/plan.md`.
 <!-- SPECKIT END -->
+
+## Collaboration Model
+
+**Roles:**
+- **Claude Code** (this agent): executes git operations, runs tests,
+  writes code, and maintains `[X]` completion status in tasks.md.
+- **Developer** (Meizhui): owns design, decisions, commit message wording,
+  PR descriptions, and any documentation outside the repo.
+
+**Source of truth:**
+- `specs/<sprint>/tasks.md` checkboxes (`[ ]` / `[X]`) are the authoritative
+  record of task completion. Claude Code maintains them.
+- Sprint progress, commit hashes, and suite status are queried live
+  (`git log`, `git status`, `grep` over tasks.md) — never cached in any
+  out-of-repo document.
+
+**`[X]` write-back policy:**
+- Claude Code decides when to mark a task `[X]`, without waiting for
+  per-task approval from the developer.
+- Criterion: the task's acceptance condition (e.g. "verify T0XX turns
+  GREEN") is genuinely met AND the implementing commit has landed on the
+  working branch.
+- A task being `[X]` is independent of the surrounding PR's merge status.
+  A `[X]` is a task-level fact, not a PR-level fact.
+- The `[X]` write-back may piggyback on the implementing commit, or land
+  as a separate `chore(sprint<N>): mark TXXX done` commit — whichever
+  fits the workflow.
+
+**Hard rules (inherited):**
+- No `git commit` or `git push` before reporting the planned action and
+  receiving the developer's explicit confirmation.
+- Test-First gate is non-negotiable: failing tests are committed first,
+  implementation commits follow.
