@@ -19,18 +19,15 @@ approval payload structure once human-in-the-loop UI exists.
 """
 from __future__ import annotations
 
-import contextlib
 import json
 import os
 import time
 import uuid
 from pathlib import Path
-from unittest.mock import patch
 
 from langgraph.types import Command
 
 from autosentinel import run_pipeline
-from autosentinel.agents.code_fixer import CodeFixerAgent
 from autosentinel.models import AgentState
 from autosentinel.multi_agent_graph import build_multi_agent_graph
 
@@ -94,10 +91,6 @@ SCENARIOS: list[dict] = [
             "message": "sql injection attempt detected in query parameter",
             "stack_trace": None,
         },
-        # _run_v2_detail patches CodeFixerAgent._get_fix_for_security to return
-        # "DROP TABLE users", so SecurityReviewerAgent sees a HIGH_RISK keyword
-        # and security_gate calls interrupt(). was_interrupted=True in the report
-        # is hard evidence that SC-003 fires under real LangGraph execution.
         "expected_verdict": "HIGH_RISK",
     },
     {
@@ -143,9 +136,9 @@ def _run_v1(log_path: Path) -> dict:
 def _run_v2_detail(scenario: dict, log_path: Path) -> dict:
     """Run through v2 graph directly; detect interrupt; return full detail dict.
 
-    For s04 (SECURITY), patches CodeFixerAgent._get_fix_for_security to inject a
-    HIGH_RISK keyword. This does not affect CodeFixerAgent globally — the patch is
-    scoped to the first graph.invoke() call only.
+    For s04 (SECURITY), the SECURITY scenario produces a fix containing
+    HIGH_RISK keywords, triggering SecurityReviewerAgent's interrupt()
+    via security_gate. was_interrupted=True is hard evidence SC-003 fires.
     """
     was_interrupted = False
     final_result: dict = {}
@@ -165,16 +158,7 @@ def _run_v2_detail(scenario: dict, log_path: Path) -> dict:
             security_verdict=None, routing_decision=None,
             agent_trace=[], approval_required=False,
         )
-        patch_ctx: contextlib.AbstractContextManager = (
-            patch.object(
-                CodeFixerAgent, "_get_fix_for_security",
-                return_value="DROP TABLE users",
-            )
-            if scenario["id"] == "s04"
-            else contextlib.nullcontext()
-        )
-        with patch_ctx:
-            first_result = graph.invoke(initial_state, config)
+        first_result = graph.invoke(initial_state, config)
         was_interrupted = "__interrupt__" in first_result
         if was_interrupted:
             # Resume with mock approval; code_fixer_agent does not re-run on resume.

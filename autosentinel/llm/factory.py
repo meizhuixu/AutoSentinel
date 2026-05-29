@@ -100,8 +100,14 @@ def _load_routing_config() -> ModelRoutingConfig:
         ) from e
 
 
-def build_client_for_agent(agent_name: str) -> "LLMClient":
-    """PR-1 placeholder. Validates config + env vars; returns MockLLMClient.
+def build_client_for_agent(
+    agent_name: str,
+) -> tuple["LLMClient", AgentModelConfig]:
+    """PR-1/PR-2 placeholder. Validates config + env vars; returns
+    (MockLLMClient, AgentModelConfig) tuple — the config is needed by
+    agents at complete()-call-time for model/max_tokens/temperature kwargs
+    per contracts/llm-client.md "Public surface". LLMClient Protocol signature
+    is unchanged; this is an implementation detail of the factory.
 
     Concrete dispatch (ArkLLMClient | GlmLLMClient based on endpoint_alias)
     will be wired in PR-2 after T021/T022 land. Until then, callers get a
@@ -129,6 +135,14 @@ def build_client_for_agent(agent_name: str) -> "LLMClient":
             f"(required for agent {agent_name!r} → endpoint {agent_cfg.endpoint_alias!r})"
         )
 
-    # PR-1 placeholder; concrete dispatch wired in PR-2.
-    from autosentinel.llm.mock_client import MockLLMClient  # late import — module
-    return MockLLMClient()                                  # may not exist until T020
+    # PR-2 transitional: factory hands out MockLLMClient pre-loaded with a
+    # placeholder response so the production graph can drive 4 specialist
+    # agents end-to-end. PR-3 (T022) replaces this branch with concrete
+    # ArkLLMClient / GlmLLMClient dispatch on agent_cfg.endpoint_alias.
+    from autosentinel.llm._placeholder_responses import get_placeholder_response
+    from autosentinel.llm.mock_client import MockLLMClient
+
+    client = MockLLMClient().with_fixture_response(
+        get_placeholder_response(agent_name)
+    )
+    return client, agent_cfg
