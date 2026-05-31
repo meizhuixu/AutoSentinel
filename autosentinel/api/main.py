@@ -7,10 +7,10 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 
 from autosentinel.api.logging import get_logger
-from autosentinel.api.models import AlertJobResponse, AlertPayload
+from autosentinel.api.models import AlertJobResponse, AlertPayload, ResumeRequest
 from autosentinel.api.queue import AlertJob, worker
 
 _logger = get_logger("event_gateway")
@@ -88,6 +88,56 @@ def create_app() -> FastAPI:
             message="Alert accepted for processing",
             trace_id=trace_id,
         )
+
+    @app.post("/incidents/{incident_id}/resume", status_code=200)
+    async def resume_incident(incident_id: str, body: ResumeRequest) -> dict:
+        """T036: resume a pipeline suspended at the HIGH_RISK approval gate.
+
+        Binds to the same env-gated checkpointer (T035) that persisted the
+        interrupt, then replays from the checkpoint via Command(resume=...).
+        The already-completed specialist nodes are NOT re-run (LangGraph
+        resumes from the saved superstep); only post-interrupt nodes execute.
+        """
+        from langgraph.types import Command
+
+        from autosentinel.multi_agent_graph import build_multi_agent_graph
+
+        graph = build_multi_agent_graph()
+        cfg = {"configurable": {"thread_id": incident_id}}
+
+        # 404 when there is no suspended checkpoint for this incident.
+        snapshot = graph.get_state(cfg)
+        if not snapshot.values:
+            raise HTTPException(
+                status_code=404, detail=f"no resumable incident {incident_id!r}"
+            )
+
+        # Run the (potentially blocking) resume off the event loop.
+        result = await asyncio.to_thread(
+            graph.invoke, Command(resume=body.model_dump()), cfg
+        )
+
+        _logger.info(
+            "incident_resumed",
+            extra={
+                "correlation_id": incident_id,
+                "trace_id": result.get("trace_id", incident_id),
+                "event": "incident_resumed",
+                "event_payload": {"decision": body.decision},
+            },
+        )
+
+        execution_result = result.get("execution_result") or {}
+        return {
+            "incident_id": incident_id,
+            "trace_id": result.get("trace_id", incident_id),
+            "decision": body.decision,
+            "approval_required": result.get("approval_required"),
+            "security_verdict": result.get("security_verdict"),
+            "execution_status": execution_result.get("status"),
+            "agent_trace": result.get("agent_trace", []),
+            "report_path": result.get("report_path"),
+        }
 
     return app
 

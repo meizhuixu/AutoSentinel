@@ -7,6 +7,7 @@ Sprint 5 PR-4 adds, all via keyword-only params on build_multi_agent_graph:
     raised inside any LLM-call agent, aborting the pipeline cleanly to END.
 """
 
+import atexit
 import logging
 import os
 import secrets
@@ -31,11 +32,28 @@ from autosentinel.nodes.parse_log import parse_log
 
 _logger = logging.getLogger(__name__)
 
-# Holds the PostgresSaver context manager open for the process lifetime when the
-# env-gated path constructs one (the connection must outlive build()).
+# Per-DSN PostgresSaver cache. The env-gated path opens ONE connection per DSN
+# and reuses it across build_multi_agent_graph() calls (the resume endpoint
+# builds a graph per request — without this it would leak a PG connection each
+# time). The context manager is held open for the process lifetime since the
+# saver's connection must outlive each build() call.
 # TECHNICAL DEBT — Phase 4 (AWS): the local-dev DSN uses postgres/postgres;
 # replace with Secrets Manager-issued credentials before any non-laptop deploy.
+_postgres_savers: dict = {}
 _open_checkpointer_cms: list = []
+
+
+@atexit.register
+def _close_open_checkpointers() -> None:
+    """Close any process-lifetime PostgresSaver connections before interpreter
+    shutdown, so psycopg doesn't emit a rollback-on-GC error during teardown."""
+    while _open_checkpointer_cms:
+        cm = _open_checkpointer_cms.pop()
+        try:
+            cm.__exit__(None, None, None)
+        except Exception:
+            pass
+    _postgres_savers.clear()
 
 _COST_EXHAUSTED_NODE = "cost_exhausted"
 
@@ -132,6 +150,9 @@ def _resolve_checkpointer(checkpointer):
     if not dsn:
         return MemorySaver()
 
+    if dsn in _postgres_savers:
+        return _postgres_savers[dsn]
+
     # Imported lazily so the module loads (and the hermetic suite collects)
     # without langgraph-checkpoint-postgres being importable / a live container.
     from langgraph.checkpoint.postgres import PostgresSaver
@@ -140,6 +161,7 @@ def _resolve_checkpointer(checkpointer):
     saver = cm.__enter__()
     saver.setup()
     _open_checkpointer_cms.append(cm)  # keep the connection alive process-wide
+    _postgres_savers[dsn] = saver
     return saver
 
 

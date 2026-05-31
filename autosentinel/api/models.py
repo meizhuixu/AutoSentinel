@@ -15,6 +15,15 @@ class AlertPayload(BaseModel):
     stack_trace: Optional[str] = None
 
 
+class ResumeRequest(BaseModel):
+    """Body for POST /incidents/{incident_id}/resume (T036)."""
+
+    model_config = {"extra": "ignore"}
+
+    decision: str  # "approve" | "reject"
+    reviewer_notes: str = ""
+
+
 class AlertJobResponse(BaseModel):
     job_id: str
     status: str
