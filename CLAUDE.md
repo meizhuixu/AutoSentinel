@@ -32,7 +32,9 @@ at `specs/005-real-llm-integration/plan.md`.
   fits the workflow.
 
 **Hard rules (inherited):**
-- No `git commit` or `git push` before reporting the planned action and
-  receiving the developer's explicit confirmation.
+- Local `git commit` is at Claude Code's discretion following the
+  Test-First rhythm — no per-commit reporting or confirmation required.
+- `git push`, opening a PR, and merging require the developer's explicit
+  confirmation (irreversible / owner action).
 - Test-First gate is non-negotiable: failing tests are committed first,
   implementation commits follow.
